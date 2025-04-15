@@ -1,25 +1,28 @@
+# Use a Conda-based image
 FROM continuumio/miniconda3
 
-# Set env for non-interactive conda
+# Avoid interactive prompts during builds
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PATH /opt/conda/bin:$PATH
 
-# Create conda env
+# Create Conda env
 RUN conda create -n faceenv python=3.10 -y
 SHELL ["conda", "run", "-n", "faceenv", "/bin/bash", "-c"]
 
-# Add conda-forge and install packages step by step
+# Use conda-forge for access to dlib + face_recognition
 RUN conda config --add channels conda-forge && \
     conda install -y cmake && \
     conda install -y dlib && \
     conda install -y face_recognition && \
     conda install -y opencv numpy flask matplotlib
 
-# Use pip for ultralytics
-RUN pip install --no-cache-dir ultralytics
+# Install YOLO from pip
+RUN pip install ultralytics
 
+# Copy project into container
 COPY . /app
 WORKDIR /app
 
+# Flask app entry point
 EXPOSE 5000
 CMD ["conda", "run", "-n", "faceenv", "python", "app.py"]

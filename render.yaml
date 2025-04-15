@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: face-attendance
+    env: docker
+    plan: free
+    healthCheckPath: /
