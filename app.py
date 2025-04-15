@@ -1,28 +1,30 @@
-import streamlit as st
+from flask import Flask, render_template, Response
 import cv2
 import os
 import pickle
-import face_recognition
 import numpy as np
+from datetime import datetime
+import face_recognition
 from ultralytics import YOLO
 import dlib
-from datetime import datetime
 
+# Init Flask
+app = Flask(__name__)
 
-# Load saved embeddings
+# Load embeddings and models
 with open("./fr_embeddings.pkl", "rb") as f:
     saved_encodings = pickle.load(f)
 
-# Load models
 yolo = YOLO("./yolov8n-face.pt")
 predictor = dlib.shape_predictor("./shape_predictor_68_face_landmarks.dat")
 
-# Configuration
+# Config
 dataset_path = "./dataset"
 verification_count = 5
 threshold = 0.45
 attendance_log = {}
 
+# Utils
 def align_face(img, bbox):
     x1, y1, x2, y2 = map(int, bbox)
     return img[y1:y2, x1:x2]
@@ -34,31 +36,23 @@ def get_embedding(img):
 
 def verify_identity(identity, test_embedding):
     person_dir = os.path.join(dataset_path, identity)
-    if not os.path.exists(person_dir):
-        return False
+    if not os.path.exists(person_dir): return False
 
     verified = 0
     checked = 0
-
     for img_name in os.listdir(person_dir):
-        if checked >= verification_count:
-            break
-        img_path = os.path.join(person_dir, img_name)
-        db_img = cv2.imread(img_path)
-        if db_img is None:
-            continue
-        db_results = yolo(db_img)
-        if len(db_results[0].boxes) == 0:
-            continue
-        db_box = db_results[0].boxes[0].xyxy[0].cpu().numpy()
+        if checked >= verification_count: break
+        db_img = cv2.imread(os.path.join(person_dir, img_name))
+        if db_img is None: continue
+        results = yolo(db_img)
+        if len(results[0].boxes) == 0: continue
+        db_box = results[0].boxes[0].xyxy[0].cpu().numpy()
         db_face = align_face(db_img, db_box)
         db_embedding = get_embedding(db_face)
-        if db_embedding is None:
-            continue
+        if db_embedding is None: continue
         checked += 1
-        if np.linalg.norm(db_embedding - test_embedding) < threshold:
+        if np.linalg.norm(test_embedding - db_embedding) < threshold:
             verified += 1
-
     return verified >= (verification_count // 2)
 
 def mark_attendance(name):
@@ -66,24 +60,12 @@ def mark_attendance(name):
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         attendance_log[name] = timestamp
 
-st.set_page_config(layout="wide")
-st.title("🎯 Real-Time Face Recognition with Attendance")
-
-start_button = st.button("📸 Start Webcam")
-
-FRAME_WINDOW = st.empty()
-LOG_WINDOW = st.empty()
-
-if start_button:
+def generate_frames():
     cap = cv2.VideoCapture(0)
-    st.info("Press 'Stop' in the browser to terminate webcam manually.")
-
     while True:
         ret, frame = cap.read()
         if not ret:
-            st.error("❌ Failed to capture frame.")
             break
-
         results = yolo(frame)
         if len(results[0].boxes) > 0:
             for box_tensor in results[0].boxes:
@@ -91,9 +73,8 @@ if start_button:
                 x1, y1, x2, y2 = map(int, box)
                 face = align_face(frame, box)
                 embedding = get_embedding(face)
-
                 if embedding is None:
-                    name = "Face encoding failed"
+                    name = "Encoding failed"
                 else:
                     name = "Unknown"
                     min_dist = float("inf")
@@ -102,30 +83,21 @@ if start_button:
                         if dist < min_dist:
                             min_dist = dist
                             candidate = record["name"]
-
                     if min_dist <= threshold and verify_identity(candidate, embedding):
                         name = candidate
                         mark_attendance(name)
-
-                # Draw bounding box and name
                 color = (0, 255, 0) if name != "Unknown" else (0, 0, 255)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(frame, name, (x1, y1 - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
+                cv2.putText(frame, name, (x1, y1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        FRAME_WINDOW.image(frame_rgb, channels="RGB")
+        _, buffer = cv2.imencode('.jpg', frame)
+        frame_bytes = buffer.tobytes()
+        yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
-        # Show attendance log live
-        if attendance_log:
-            with LOG_WINDOW.container():
-                st.subheader("📋 Attendance Log")
-                for person, time in attendance_log.items():
-                    st.markdown(f"**{person}** at _{time}_")
+@app.route('/')
+def index():
+    return render_template('index.html', log=attendance_log)
 
-        if not st.session_state.get("run_webcam", True):
-            break
-
-    cap.release()
-    FRAME_WINDOW.image(frame_rgb, caption="Final Frame", channels="RGB")
-    st.success("✅ Webcam stopped.")
+@app.route('/video')
+def video():
+    return Response(generate_frames(), mimetype='multipart/x-mixed-replace; boundary=frame')

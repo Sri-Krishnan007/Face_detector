@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Face Attendance</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <h2>📸 Live Face Recognition Attendance</h2>
+  <img src="{{ url_for('video') }}" width="720px" />
+  <h3>📝 Attendance Log:</h3>
+  <ul>
+    {% for name, time in log.items() %}
+    <li><strong>{{ name }}</strong> at {{ time }}</li>
+    {% endfor %}
+  </ul>
+</body>
+</html>
