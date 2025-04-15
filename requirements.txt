@@ -1,6 +1,1 @@
-flask
-opencv-python
-numpy
-face_recognition
-dlib
 ultralytics

@@ -1,14 +1,15 @@
-FROM python:3.10-slim-bullseye
+FROM continuumio/miniconda3
 
-RUN apt-get update && apt-get install -y \
-    build-essential cmake libgl1 libglib2.0-0 libx11-6 ffmpeg && \
-    rm -rf /var/lib/apt/lists/*
+# Create conda environment
+RUN conda create -n faceenv python=3.10 -y
+SHELL ["conda", "run", "-n", "faceenv", "/bin/bash", "-c"]
+
+# Activate conda and install packages
+RUN conda install -y cmake dlib face_recognition opencv numpy flask matplotlib \
+    && pip install ultralytics
 
 COPY . /app
 WORKDIR /app
 
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
-
 EXPOSE 5000
-CMD ["python", "app.py"]
+CMD ["conda", "run", "-n", "faceenv", "python", "app.py"]
