@@ -1,17 +1,14 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Face Attendance</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>Live Face Recognition</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
-  <h2>📸 Live Face Recognition Attendance</h2>
-  <img src="{{ url_for('video') }}" width="720px" />
-  <h3>📝 Attendance Log:</h3>
-  <ul>
-    {% for name, time in log.items() %}
-    <li><strong>{{ name }}</strong> at {{ time }}</li>
-    {% endfor %}
-  </ul>
+    <h1>🎥 Live Face Recognition Feed</h1>
+    <img src="{{ url_for('video_feed') }}" width="720">
+    <footer>
+        Built with 🧠 by your team.
+    </footer>
 </body>
 </html>
