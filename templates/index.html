@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Stream</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        #videoContainer {
+            position: relative;
+            width: 640px; /* Match canvas/video width */
+            height: 480px; /* Match canvas/video height */
+            border: 1px solid #ccc;
+            background-color: #000; /* Black background while loading */
+            margin-bottom: 20px;
+        }
+        video {
+            display: block; /* Remove extra space below video */
+            width: 100%;
+            height: 100%;
+        }
+        #startButton {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+        #resultsContainer {
+            border: 1px solid #ccc;
+            padding: 15px;
+            background-color: #fff;
+            width: 640px;
+            min-height: 100px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        #results pre {
+            white-space: pre-wrap; /* Wrap long lines */
+            word-wrap: break-word;
+            margin: 0;
+            font-family: monospace;
+            font-size: 14px;
+            line-height: 1.4;
+        }
+        #status {
+            margin-top: 10px;
+            font-style: italic;
+            color: #555;
+        }
+         /* Hide the canvas used for grabbing frames */
+        #canvas {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Live Face Recognition</h1>
+
+    <button id="startButton">Start Camera</button>
+
+    <div id="videoContainer">
+        <video id="video" width="640" height="480" autoplay playsinline muted></video>
+        <!-- Canvas for grabbing frames - hidden -->
+        <canvas id="canvas" width="640" height="480"></canvas>
+    </div>
+
+    <div id="resultsContainer">
+        <h2>Detection Results:</h2>
+        <pre id="results">Waiting for camera...</pre>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const startButton = document.getElementById('startButton');
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const context = canvas.getContext('2d');
+        const resultsDiv = document.getElementById('results');
+        const statusDiv = document.getElementById('status');
+
+        let stream;
+        let intervalId = null;
+        const FPS = 5; // Send frames to backend X times per second
+
+        async function startCamera() {
+            statusDiv.textContent = 'Requesting camera access...';
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 }, // Request specific size
+                    audio: false
+                });
+                video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                     console.log("Video metadata loaded. Starting capture loop.");
+                     startButton.style.display = 'none'; // Hide button
+                     statusDiv.textContent = 'Camera active. Processing frames...';
+                     // Start sending frames after a short delay to ensure video is playing
+                     setTimeout(() => {
+                         if (intervalId) clearInterval(intervalId); // Clear previous interval if any
+                         intervalId = setInterval(captureAndSendFrame, 1000 / FPS);
+                     }, 500); // 500ms delay
+                };
+                 video.play(); // Ensure video plays
+                 console.log("Camera stream obtained.");
+
+            } catch (err) {
+                console.error("Error accessing camera:", err);
+                resultsDiv.textContent = `Error accessing camera: ${err.name} - ${err.message}\nPlease ensure you grant permission and no other app is using the camera.`;
+                statusDiv.textContent = 'Camera access failed.';
+                startButton.style.display = 'block'; // Show button again
+            }
+        }
+
+        async function captureAndSendFrame() {
+            if (video.readyState < video.HAVE_ENOUGH_DATA) {
+                 console.log("Video not ready yet, skipping frame.");
+                 return; // Don't capture if video isn't ready
+            }
+
+            try {
+                // Draw video frame to canvas
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+                // Get image data as base64 JPEG
+                // Use a lower quality (e.g., 0.8) to reduce data size
+                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+
+                // Send to backend API
+                const response = await fetch('/detectface', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ image: imageData }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({ error: `HTTP error! Status: ${response.status}` }));
+                    console.error('API Error:', errorData);
+                    statusDiv.textContent = `API Error: ${errorData.error || response.statusText}`;
+                    // Optionally format the resultsDiv with error details
+                    resultsDiv.textContent = `Name: Error\nDistance: N/A\nTime: ${new Date().toLocaleTimeString()}\nLiveness: N/A\nMessage: ${errorData.message || 'Failed to get details'}`;
+                    return; // Stop processing this frame on error
+                }
+
+                const data = await response.json();
+
+                // Display results
+                resultsDiv.textContent = `Name:     ${data.name}\nDistance: ${data.distance}\nTime:     ${data.time}\nLiveness: ${data.liveness}\n\nMessage:  ${data.message}`;
+                statusDiv.textContent = 'Processing...'; // Reset status on success
+
+            } catch (error) {
+                console.error('Error capturing or sending frame:', error);
+                statusDiv.textContent = `JavaScript Error: ${error.message}`;
+                // Don't stop the interval for JS errors unless it's fatal
+            }
+        }
+
+        startButton.addEventListener('click', startCamera);
+
+        // Optional: Cleanup on page unload
+        window.addEventListener('beforeunload', () => {
+            if (intervalId) {
+                clearInterval(intervalId);
+            }
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                console.log("Camera stream stopped.");
+            }
+        });
+
+    </script>
+
+</body>
+</html>

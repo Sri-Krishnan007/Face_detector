@@ -322,119 +322,118 @@ def process_frame_for_recognition(frame, frame_buffer, yolo_model, saved_encs, d
     return annotations
 
 # --- Matplotlib Setup ---
-plt.ion() # Turn on interactive mode
-fig, ax = plt.subplots(figsize=(10, 7)) # Adjust figure size if needed
-fig.canvas.manager.set_window_title("Live Face Recognition with Liveness Check")
-placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8) # Placeholder
-img_display = ax.imshow(cv2.cvtColor(placeholder_img, cv2.COLOR_BGR2RGB))
-ax.set_axis_off() # Hide axes
-plt.tight_layout()
+if __name__ == "__main__":
+    plt.ion()  # Turn on interactive mode
+    fig, ax = plt.subplots(figsize=(10, 7))  # Adjust figure size if needed
+    fig.canvas.manager.set_window_title("Live Face Recognition with Liveness Check")
+    placeholder_img = np.zeros((480, 640, 3), dtype=np.uint8)  # Placeholder
+    img_display = ax.imshow(cv2.cvtColor(placeholder_img, cv2.COLOR_BGR2RGB))
+    ax.set_axis_off()  # Hide axes
+    plt.tight_layout()
 
-# --- Live Video Loop ---
-cap = cv2.VideoCapture(WEBCAM_INDEX)
-if not cap.isOpened():
-    print(f"[ERROR] Cannot open webcam {WEBCAM_INDEX}")
-    exit()
+    # --- Live Video Loop ---
+    cap = cv2.VideoCapture(WEBCAM_INDEX)
+    if not cap.isOpened():
+        print(f"[ERROR] Cannot open webcam {WEBCAM_INDEX}")
+        exit()
 
-print("[INFO] Starting video stream. Press 'q' in the plot window or Ctrl+C in terminal to quit.")
+    print("[INFO] Starting video stream. Press 'q' in the plot window or Ctrl+C in terminal to quit.")
 
-running = True
-prev_time = time.time()
-frame_count = 0
-fps_text = "FPS: ..."
+    running = True
+    prev_time = time.time()
+    frame_count = 0
+    fps_text = "FPS: ..."
 
-# Initialize frame buffer for liveness check
-frame_buffer = collections.deque(maxlen=LIVENESS_BUFFER_SIZE)
+    # Initialize frame buffer for liveness check
+    frame_buffer = collections.deque(maxlen=LIVENESS_BUFFER_SIZE)
 
-# Function to handle window close event
-def handle_close(evt):
-    global running
-    print("Close button pressed. Exiting...")
-    running = False
+    # Function to handle window close event
+    def handle_close(evt):
+        global running
+        print("Close button pressed. Exiting...")
+        running = False
 
-# Connect the close event
-fig.canvas.mpl_connect('close_event', handle_close)
+    # Connect the close event
+    fig.canvas.mpl_connect('close_event', handle_close)
 
-while running:
-    ret, frame = cap.read()
-    if not ret:
-        print("[ERROR] Failed to grab frame from webcam.")
-        break
+    while running:
+        ret, frame = cap.read()
+        if not ret:
+            print("[ERROR] Failed to grab frame from webcam.")
+            break
 
-    # Make a copy for the buffer *before* any drawing might occur
-    frame_copy = frame.copy()
-    frame_buffer.append(frame_copy)
+        # Make a copy for the buffer *before* any drawing might occur
+        frame_copy = frame.copy()
+        frame_buffer.append(frame_copy)
 
-    # --- Frame Processing ---
-    # Process the *original* frame
-    annotations = process_frame_for_recognition(
-        frame, frame_buffer, yolo, saved_encodings, DATASET_PATH, VERIFICATION_COUNT, THRESHOLD
-    )
+        # --- Frame Processing ---
+        # Process the *original* frame
+        annotations = process_frame_for_recognition(
+            frame, frame_buffer, yolo, saved_encodings, DATASET_PATH, VERIFICATION_COUNT, THRESHOLD
+        )
 
-    # --- Drawing Annotations ---
-    # Clear previous drawings from axes
-    for item in ax.patches + ax.texts:
-        item.remove()
+        # --- Drawing Annotations ---
+        # Clear previous drawings from axes
+        for item in ax.patches + ax.texts:
+            item.remove()
 
-    # Update the image data (display the frame *before* annotations are drawn on it)
-    img_display.set_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+        # Update the image data (display the frame *before* annotations are drawn on it)
+        img_display.set_data(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
 
-    # Draw new annotations
-    for ann in annotations:
-        x1, y1, x2, y2 = map(int, ann['bbox'])
-        identity = ann['identity']
-        is_live = ann.get('live', True) # Default to live if key missing
+        # Draw new annotations
+        for ann in annotations:
+            x1, y1, x2, y2 = map(int, ann['bbox'])
+            identity = ann['identity']
+            is_live = ann.get('live', True)  # Default to live if key missing
 
-        # Determine color based on identity and liveness
-        if not is_live and LIVENESS_ENABLED:
-             color = 'magenta' # Special color for spoof
-             identity = "Spoof Detected" # Override text
-        elif 'Unknown' in identity or 'Fail' in identity or 'Processing' in identity:
-             color = 'red'
-        else: # Known identity and passed liveness (or liveness disabled)
-             color = 'lime'
+            # Determine color based on identity and liveness
+            if not is_live and LIVENESS_ENABLED:
+                color = 'magenta'  # Special color for spoof
+                identity = "Spoof Detected"  # Override text
+            elif 'Unknown' in identity or 'Fail' in identity or 'Processing' in identity:
+                color = 'red'
+            else:  # Known identity and passed liveness (or liveness disabled)
+                color = 'lime'
 
+            # Draw bounding box
+            rect = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2, edgecolor=color, facecolor='none')
+            ax.add_patch(rect)
 
-        # Draw bounding box
-        rect = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2, edgecolor=color, facecolor='none')
-        ax.add_patch(rect)
+            # Draw label
+            ax.text(x1, y1 - 10, identity, color='white', fontsize=9, bbox=dict(facecolor=color, alpha=0.7, pad=1))
 
-        # Draw label
-        ax.text(x1, y1 - 10, identity, color='white', fontsize=9, bbox=dict(facecolor=color, alpha=0.7, pad=1))
+        # --- Calculate and Display FPS ---
+        frame_count += 1
+        curr_time = time.time()
+        elapsed = curr_time - prev_time
+        if elapsed >= 1.0:  # Update FPS every second
+            fps = frame_count / elapsed
+            fps_text = f"FPS: {fps:.2f}"
+            prev_time = curr_time
+            frame_count = 0
 
-    # --- Calculate and Display FPS ---
-    frame_count += 1
-    curr_time = time.time()
-    elapsed = curr_time - prev_time
-    if elapsed >= 1.0: # Update FPS every second
-        fps = frame_count / elapsed
-        fps_text = f"FPS: {fps:.2f}"
-        prev_time = curr_time
-        frame_count = 0
+        # Display FPS on the plot
+        ax.text(5, 25, fps_text, color='cyan', fontsize=12, bbox=dict(facecolor='black', alpha=0.5))
 
-    # Display FPS on the plot
-    ax.text(5, 25, fps_text, color='cyan', fontsize=12, bbox=dict(facecolor='black', alpha=0.5))
+        # --- Update Matplotlib Display ---
+        try:
+            fig.canvas.draw_idle()
+            fig.canvas.flush_events()
+            # plt.pause(0.001) # Minimal pause for GUI responsiveness
+        except Exception as e:
+            if "FigureManager base class has been destroyed" in str(e) or not plt.fignum_exists(fig.number):
+                print("Plot window closed. Exiting...")
+                running = False
+            else:
+                print(f"Error during plot update: {e}")
+                # Decide if the error is fatal
+                # running = False # Exit on plot errors? Maybe too strict.
+                # Let's try to continue if possible, but log the error.
 
-    # --- Update Matplotlib Display ---
-    try:
-        fig.canvas.draw_idle()
-        fig.canvas.flush_events()
-        # plt.pause(0.001) # Minimal pause for GUI responsiveness
-    except Exception as e:
-        if "FigureManager base class has been destroyed" in str(e) or not plt.fignum_exists(fig.number):
-             print("Plot window closed. Exiting...")
-             running = False
-        else:
-             print(f"Error during plot update: {e}")
-             # Decide if the error is fatal
-             # running = False # Exit on plot errors? Maybe too strict.
-             # Let's try to continue if possible, but log the error.
-
-
-# --- Cleanup ---
-print("[INFO] Releasing resources...")
-cap.release()
-plt.ioff() # Turn off interactive mode
-# Don't explicitly close if handle_close is working, it might cause errors.
-# plt.close(fig)
-print("[INFO] Exiting.")
+    # --- Cleanup ---
+    print("[INFO] Releasing resources...")
+    cap.release()
+    plt.ioff()  # Turn off interactive mode
+    # Don't explicitly close if handle_close is working, it might cause errors.
+    # plt.close(fig)
+    print("[INFO] Exiting.")
